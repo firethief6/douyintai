@@ -1,0 +1,32 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "抖音台",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "center": true,
+        "decorations": false,
+        "backgroundColor": "#0a0b0d"
+      }
+    ]
+  },
+  "bundle": {
+    "targets": [
+      "msi"
+    ],
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      },
+      "nsis": {
+        "languages": [
+          "SimpChinese"
+        ]
+      }
+    }
+  }
+}

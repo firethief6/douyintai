@@ -1,0 +1,10 @@
+{
+  "productName": "douyintai",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "desktopTemplate": "deb/抖音台.desktop"
+      }
+    }
+  }
+}

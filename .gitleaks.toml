@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "公开资源与构建目录"
+paths = [
+  '''crates/dycore/resources/pool\.jsonl''',
+  '''(^|/)target/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+]

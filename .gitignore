@@ -1,0 +1,17 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.DS_Store
+*.log
+var/
+demo/.cache/
+target/
+.browser-profile/
+.env
+.env.*
+!.env.example
+!.env.public.example
+*.sqlite3
+*.sqlite3-*
+__pycache__/

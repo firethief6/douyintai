@@ -1,0 +1,9 @@
+[package]
+name = "dysign"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+unidroid = "0.8.1"
+flate2 = "1"
+serde_json = "1"

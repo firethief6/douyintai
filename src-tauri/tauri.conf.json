@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "抖音台",
+  "version": "0.1.0",
+  "identifier": "io.firethief6.douyintai",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "抖音台",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "center": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#0a0b0d"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../crates/dysign/resources/libmetasec_ml.so": "sign/libmetasec_ml.so",
+      "../crates/dysign/resources/libEncryptor.so": "sign/libEncryptor.so",
+      "../crates/dysign/resources/alloc.tsv": "sign/alloc.tsv",
+      "../crates/dysign/resources/jni.tsv": "sign/jni.tsv",
+      "../crates/dysign/resources/rootfs": "sign/rootfs",
+      "../crates/dysign/resources/supers.tsv.gz": "sign/supers.tsv.gz",
+      "../crates/dysign/resources/device-seq-cold.jsonl": "sign/device-seq-cold.jsonl"
+    }
+  },
+  "mainBinaryName": "douyintai"
+}

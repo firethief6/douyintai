@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { qualityChoices, supportsGear } from "../src/lib/playback-quality.ts";
+
+const gear = (name, width, height, bit_rate, h264 = true) => ({ name, quality: name, width, height, bit_rate, h264, size: 0 });
+const h264 = gear("avc720", 1280, 720, 800000);
+const hevc = gear("hevc1080", 1920, 1080, 600000, false);
+const low = gear("avc540", 960, 540, 300000);
+globalThis.document = { createElement: () => ({ canPlayType: type => type.includes("avc1") ? "probably" : "" }) };
+assert.equal(await supportsGear(hevc), false);
+assert.equal(await supportsGear(h264), true);
+assert.deepEqual(qualityChoices([h264, low]).map(c => c.level), ["medium", "low"]);
+const list = qualityChoices([low, hevc, h264]);
+assert.deepEqual(list.map(c => c.level), ["high", "medium", "low"]);
+assert.equal(list[0].gear.name, "hevc1080");
+assert.equal(list[1].gear.name, "avc720");
+assert.equal(list[2].gear.name, "avc540");
+assert.equal(qualityChoices([h264, {...h264, name:"duplicate"}]).length, 1);
+// 分档按分辨率定，不按档位数量：单档 720 仍是中档。
+assert.equal(qualityChoices([h264])[0].level, "medium");
+assert.equal(qualityChoices([gear("avc360", 640, 360, 200000)])[0].level, "low");
+assert.equal(qualityChoices([gear("avc1080", 1920, 1080, 900000)])[0].level, "high");
+assert.equal(qualityChoices([gear("hevc4k", 3840, 2160, 9000000, false)])[0].level, "ultra");
+const tiers = qualityChoices([gear("hevc4k",3840,2160,9000000,false), gear("avc1080",1920,1080,900000), h264, gear("avc540",960,540,300000)]);
+assert.deepEqual(tiers.map(c => c.level), ["ultra", "high", "medium", "low"]);
+assert.equal(qualityChoices([]).length, 0);
+const sameSize = qualityChoices([h264, {...h264, name:"lower", bit_rate:400000}]);
+assert.equal(sameSize[0].gear.bit_rate, 800000);
+assert.equal(sameSize.length, 1);
+assert.equal(qualityChoices([gear("bad",0,0,0)]).length, 0);
+const manyLow = [gear("high",1920,1080,2000000), h264, ...[6,5,4,3,2,1].map(n=>gear(`low${n}`,960,540,n*100000))];
+assert.equal(qualityChoices(manyLow)[1].gear.name, "avc720");
+console.log("playback quality: passed");

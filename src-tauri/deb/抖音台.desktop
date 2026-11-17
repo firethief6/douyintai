@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories=AudioVideo;Video;Player;
+Comment=Douyin desktop workbench
+Exec=douyintai
+StartupWMClass=douyintai
+Icon=douyintai
+Name=抖音台
+Name[zh_CN]=抖音台
+GenericName=抖音客户端
+Terminal=false
+Type=Application

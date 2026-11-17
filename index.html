@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/design/icon.svg" />
+    <title>抖音台 · Douyin Desk</title>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const ua = navigator.userAgent.toLowerCase();
+        document.documentElement.dataset.platform =
+          ua.includes("macintosh") || ua.includes("mac os") ? "macos" :
+          ua.includes("windows") ? "windows" : "linux";
+      })();
+    </script>
+    <script>
+      window.addEventListener("error", (e) => { document.title = "ERR: " + (e.message || e.error); });
+      window.addEventListener("unhandledrejection", (e) => { document.title = "REJ: " + (e.reason?.message || e.reason); });
+    </script>
+    <main id="app"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

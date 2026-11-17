@@ -1,0 +1,261 @@
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: package / ${{ matrix.slug }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout || 90 }}
+    permissions:
+      contents: read
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-24.04
+            slug: linux-x64
+            bundles: deb
+          - name: Windows x86_64
+            os: windows-latest
+            slug: windows-x64
+            bundles: msi
+          # macOS arm64 用 Intel 机交叉编译：GitHub 的 arm64 托管机长期排队，
+          # 交叉编译配合下方 uname 垫片可稳定出包。
+          - name: macOS arm64
+            os: macos-15-intel
+            slug: macos-arm64
+            bundles: app,dmg
+            target: aarch64-apple-darwin
+            host_arch: arm64
+            timeout: 120
+          - name: macOS x86_64
+            os: macos-15-intel
+            slug: macos-x64
+            bundles: app,dmg
+            host_arch: x86_64
+            timeout: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: package-${{ matrix.slug }}
+
+      - name: 安装 Linux 依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libdbus-1-dev libayatana-appindicator3-dev libssl-dev \
+            pkg-config patchelf
+        shell: bash
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+        shell: bash
+
+      - name: 检查
+        # Rust 单测在 CI 里链接内存开销大，只在标签构建时跑静态检查和前端测试。
+        run: pnpm lint:ui && pnpm build && pnpm test:ui && pnpm lint:rust
+        shell: bash
+
+      - name: 编译并打包
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ matrix.target }}" ]]; then
+            # unicorn 的 cmake 用 ${CMAKE_C_COMPILER} -dM -E 探测宏，探测时不带
+            # --target，于是按宿主机架构选出 x86 专用参数（-m64 -mcx16），在 arm64
+            # 目标上直接编译失败。用 cc 包装器始终带上 --target 即可选对分支。
+            shim="$RUNNER_TEMP/cross-cc"
+            mkdir -p "$shim"
+            for tool in cc c++; do
+              {
+                echo '#!/bin/sh'
+                echo "exec /usr/bin/$tool --target=${{ matrix.target }} \"\$@\""
+              } > "$shim/$tool"
+              chmod +x "$shim/$tool"
+            done
+            export PATH="$shim:$PATH"
+            export CC="$shim/cc"
+            export CXX="$shim/c++"
+            export CMAKE_OSX_ARCHITECTURES="${{ matrix.host_arch }}"
+            pnpm tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}"
+          else
+            pnpm tauri build --bundles "${{ matrix.bundles }}"
+          fi
+
+      - name: 校验产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          OUT=target/release
+          [[ -n "${{ matrix.target }}" ]] && OUT="target/${{ matrix.target }}/release"
+
+          case "${{ matrix.slug }}" in
+            linux-x64)
+              bins=("$OUT"/douyintai)
+              installers=("$OUT"/bundle/deb/*.deb)
+              ;;
+            windows-x64)
+              bins=("$OUT"/douyintai.exe)
+              installers=("$OUT"/bundle/msi/*.msi)
+              ;;
+            macos-*)
+              bins=("$OUT"/douyintai)
+              installers=("$OUT"/bundle/dmg/*.dmg)
+              apps=("$OUT"/bundle/macos/*.app)
+              ;;
+          esac
+
+          fail=0
+          for f in "${bins[@]-}" "${apps[@]-}" "${installers[@]-}"; do
+            [[ -n "$f" ]] || continue
+            if [[ ! -s "$f" ]]; then
+              echo "缺少产物：$f" >&2
+              fail=1
+            fi
+          done
+          [[ -n "${installers[0]-}" ]] || { echo "未生成安装包" >&2; fail=1; }
+          [[ -s "${bins[0]-}" ]] || fail=1
+
+          for app in "${apps[@]-}"; do
+            [[ -n "$app" ]] || continue
+            for asset in libmetasec_ml.so supers.tsv.gz device-seq-cold.jsonl; do
+              [[ -f "$app/Contents/Resources/sign/$asset" ]] \
+                || { echo "安装包缺少签名资源：$asset" >&2; fail=1; }
+            done
+            [[ -d "$app/Contents/Resources/sign/rootfs" ]] \
+              || { echo "安装包缺少签名 rootfs" >&2; fail=1; }
+          done
+
+          [[ -n "$(find "$OUT" -name libmetasec_ml.so -size +1M -print -quit)" ]] \
+            || { echo "产物缺少 libmetasec_ml.so" >&2; fail=1; }
+
+          exit "$fail"
+
+      - name: 冒烟启动（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path target/release/douyintai.exe).Path
+          $p = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { Write-Host "应用已退出：$($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "已启动并保持运行"
+
+      - name: 列出产物
+        shell: bash
+        run: |
+          OUT=target/release
+          [[ -n "${{ matrix.target }}" ]] && OUT="target/${{ matrix.target }}/release"
+          ls -lh "$OUT"/bundle/*/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: douyintai-${{ matrix.slug }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ matrix.target && format('target/{0}/release/bundle', matrix.target) || 'target/release/bundle' }}/deb/*.deb
+            ${{ matrix.target && format('target/{0}/release/bundle', matrix.target) || 'target/release/bundle' }}/msi/*.msi
+            ${{ matrix.target && format('target/{0}/release/bundle', matrix.target) || 'target/release/bundle' }}/dmg/*.dmg
+
+  release:
+    name: release / ${{ github.ref_name }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成校验和
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          find . -mindepth 2 -type f -exec mv -t . {} +
+          find . -mindepth 1 -type d -empty -delete
+          for f in *; do
+            case "$f" in
+              *[!\ -~]*) ;;
+              *) continue ;;
+            esac
+            safe="$(printf '%s' "$f" | LC_ALL=C tr -d '\200-\377')"
+            [[ "$safe" == _* ]] && safe="douyintai$safe"
+            mv -- "$f" "$safe"
+          done
+          sha256sum * > SHA256SUMS
+
+      - name: 创建或更新预发布
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --generate-notes \
+              --title "$TAG"
+          fi
+
+      - name: 校验发布资产
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for kind in deb msi dmg SHA256SUMS; do
+            grep -q "\.$kind$\|^$kind$" <<<"$assets" \
+              || { echo "Release 缺少 $kind 资产" >&2; exit 1; }
+          done
+          printf '%s\n' "$assets"
